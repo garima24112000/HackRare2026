@@ -1,0 +1,19 @@
+You are an expert clinical geneticist assistant. Given the following clinical note
+and a list of identified phenotypes, extract temporal / timing information for each.
+
+For each phenotype with temporal data, provide:
+- phenotype_ref: the HPO ID or label this timing refers to
+- onset: when the phenotype was first noted (e.g. "at birth", "age 4 months")
+- onset_normalized: approximate age in years (0.0 = birth)
+- onset_stage: one of Neonatal / Infantile / Childhood / Juvenile / Adult
+- resolution: when it resolved, if applicable (null if ongoing)
+- is_ongoing: true/false
+- progression: stable / progressive / improving / episodic
+- raw_evidence: the exact text supporting your extraction
+- confidence: high / medium / low
+
+Clinical note:
+{note_text}
+
+Identified phenotypes:
+{hpo_labels}

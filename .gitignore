@@ -1,0 +1,30 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Data files (large, download separately)
+data/raw/*.obo
+data/raw/*.hpoa
+data/raw/*.xml
+
+# Chainlit
+.chainlit/
+chainlit.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

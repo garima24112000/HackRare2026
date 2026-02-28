@@ -1,0 +1,15 @@
+You are an expert clinical geneticist assistant. Given the following clinical note,
+identify all phenotypic findings that are EXCLUDED (negated). 
+
+For each excluded finding, provide:
+- The exact quote from the note containing the negation
+- The HPO term it maps to (if possible)
+- Whether the exclusion is "explicit" (directly stated: "no seizures", "denies X")
+  or "soft" (implied: "unlikely", "not consistent with")
+- Your confidence level (high / medium / low)
+
+Clinical note:
+{note_text}
+
+Known HPO synonyms available for matching:
+{synonym_hints}
