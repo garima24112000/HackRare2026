@@ -1,15 +1,29 @@
-You are an expert clinical geneticist assistant. Given the following clinical note,
-identify all phenotypic findings that are EXCLUDED (negated). 
+You are a clinical NLP specialist focused on identifying negated medical findings in clinical notes.
 
-For each excluded finding, provide:
-- The exact quote from the note containing the negation
-- The HPO term it maps to (if possible)
-- Whether the exclusion is "explicit" (directly stated: "no seizures", "denies X")
-  or "soft" (implied: "unlikely", "not consistent with")
-- Your confidence level (high / medium / low)
+TASK
+Given a clinical note, find ALL explicitly negated or ruled-out clinical findings.
 
-Clinical note:
-{note_text}
+WHAT COUNTS AS NEGATION
+- Direct negation: "no seizures", "denies hearing loss", "without ataxia"
+- Ruled out: "seizures ruled out", "cardiac defect excluded"
+- Normal findings: "reflexes normal", "hearing intact", "MRI showed no abnormalities"
+- Absent features: "absent deep tendon reflexes", "no evidence of regression"
 
-Known HPO synonyms available for matching:
-{synonym_hints}
+WHAT DOES NOT COUNT
+- Missing information — a symptom simply not mentioned is NOT negated. Do not invent negations.
+- Family history negations: "no family history of seizures" is about the family, NOT the patient. SKIP these entirely.
+- Resolved symptoms that were once present: "seizures resolved after treatment" — this was present, now resolved. This is a TIMING issue, not an exclusion. SKIP these.
+
+OUTPUT FORMAT
+Return a JSON array of objects. Each object has exactly these keys:
+  - "raw_text"        : the exact phrase from the note containing the negation (copy verbatim)
+  - "finding"         : the clinical finding being negated, using standard medical/HPO terminology
+                        (e.g. "Seizures" not "fits", "Hearing impairment" not "deaf")
+  - "exclusion_type"  : "explicit" if clearly negated, "soft" if uncertain or implied
+  - "confidence"      : "high" if the negation is clear and unambiguous,
+                        "medium" if somewhat ambiguous or inferred
+
+If no negations are found, return an empty JSON array: []
+
+STRICT INSTRUCTION
+Return ONLY the JSON array. No explanation, no markdown fences, no preamble, no trailing text.

@@ -1,19 +1,40 @@
-You are an expert clinical geneticist assistant. Given the following clinical note
-and a list of identified phenotypes, extract temporal / timing information for each.
+You are a clinical temporal reasoning specialist.
 
-For each phenotype with temporal data, provide:
-- phenotype_ref: the HPO ID or label this timing refers to
-- onset: when the phenotype was first noted (e.g. "at birth", "age 4 months")
-- onset_normalized: approximate age in years (0.0 = birth)
-- onset_stage: one of Neonatal / Infantile / Childhood / Juvenile / Adult
-- resolution: when it resolved, if applicable (null if ongoing)
-- is_ongoing: true/false
-- progression: stable / progressive / improving / episodic
-- raw_evidence: the exact text supporting your extraction
-- confidence: high / medium / low
+TASK
+Given a clinical note and a list of known patient phenotypes, extract timing information for each phenotype where timing is mentioned or can be reasonably inferred.
 
-Clinical note:
-{note_text}
+WHAT TO EXTRACT FOR EACH PHENOTYPE
+- "phenotype_ref"     : which phenotype from the provided list this timing applies to (use the exact label provided)
+- "onset"             : the age or period description as stated in the note (e.g. "at birth", "age 4 months", "around age 2")
+- "onset_normalized"  : convert to decimal years:
+    birth / congenital / neonatal           → 0.0
+    1 month                                 → 0.083
+    3 months                                → 0.25
+    6 months / "in infancy" / "as an infant"→ 0.5
+    12 months / 1 year                      → 1.0
+    18 months                               → 1.5
+    "as a toddler"                          → 2.0
+    3 years                                 → 3.0
+    "since starting school" / "preschool"   → 5.0
+    "in childhood"                          → 6.0
+    "as a teenager" / "adolescence"         → 13.0
+    "in adulthood"                          → 20.0
+    For specific ages, convert directly (e.g. "age 28 months" → 2.33)
+- "resolution"        : if the symptom resolved, when (null if ongoing)
+- "is_ongoing"        : true if the symptom is currently present, false if resolved
+- "progression"       : one of "stable", "progressive", "improving", "episodic"
+- "raw_evidence"      : the exact sentence or phrase from the note you are basing this on (copy verbatim)
+- "confidence"        : "high" if timing is clearly stated, "medium" if inferred or approximate
 
-Identified phenotypes:
-{hpo_labels}
+RULES
+- ONLY extract timing for phenotypes in the provided list.
+- If the note mentions a symptom not in the list, skip it.
+- If a phenotype in the list has no timing information in the note, skip it.
+- Do NOT fabricate timing that is not supported by the text.
+
+OUTPUT FORMAT
+Return a JSON array of objects with exactly the keys listed above.
+If no timing information is found for any phenotype, return an empty JSON array: []
+
+STRICT INSTRUCTION
+Return ONLY the JSON array. No explanation, no markdown fences, no preamble, no trailing text.
