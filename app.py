@@ -150,6 +150,28 @@ async def on_message(message: cl.Message):
     if not text:
         return
 
+    # ── Handle patient selection command from JS (load_patient:N) ──
+    patient_cmd = re.match(r'^load_patient:(\d+)$', text)
+    if patient_cmd:
+        idx = int(patient_cmd.group(1))
+        if idx < len(PATIENTS):
+            patient = PATIENTS[idx]
+            hpo_terms = patient.get("hpo_terms", [])
+            age = patient.get("age")
+            sex = patient.get("sex")
+            cl.user_session.set("current_hpo_terms", list(hpo_terms))
+            cl.user_session.set("current_patient", patient)
+            hpo_index = DATA.get("hpo_index", {})
+            load_html = format_patient_load_card(patient, hpo_index)
+            await cl.Message(content=load_html).send()
+            patient_input = PatientInput(
+                hpo_terms=list(hpo_terms),
+                age=age,
+                sex=sex,
+            )
+            await run_analysis(patient_input, patient)
+        return
+
     # Check for HPO term pattern
     hpo_pattern = re.findall(r"HP:\d{7}", text)
 
@@ -195,18 +217,20 @@ async def on_add_hpo_term(action: cl.Action):
         current_terms.append(hpo_id)
         cl.user_session.set("current_hpo_terms", current_terms)
 
-    # Send a styled "phenotype added" card
+    # Send a styled "phenotype added" card (full-viewport loading state)
     await cl.Message(
         content=(
-            '<div class="patient-load-card" style="border-left-color:var(--green);">'
+            '<div class="patient-load-card">'
+            '<div class="loading-spinner"></div>'
+            '<div class="pl-inner">'
             '<div class="pl-top">'
-            '<div style="width:32px;height:32px;border-radius:8px;background:var(--green-dim);'
+            '<div style="width:32px;height:32px;border-radius:8px;background:var(--green-a);'
             'color:var(--green);display:flex;align-items:center;justify-content:center;font-size:14px;">+</div>'
             '<div>'
             f'<div class="pl-action" style="color:var(--green);">Phenotype added — re-running analysis</div>'
             f'<div class="cp-name">{label}</div>'
-            f'<div class="cp-sub" style="font-family:var(--font-mono);font-size:10px;">{hpo_id}</div>'
-            '</div></div></div>'
+            f'<div class="cp-sub" style="font-family:var(--mono);font-size:10px;">{hpo_id}</div>'
+            '</div></div></div></div>'
         )
     ).send()
 
