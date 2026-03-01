@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from pathlib import Path
 
 import pronto
+
+# Resolve project root relative to this file's location
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_all(db) -> dict[str, Any]:
@@ -95,7 +99,7 @@ def load_all(db) -> dict[str, Any]:
 
     # --- Ontology ------------------------------------------------------------
     print("Loading HPO ontology from data/raw/hp.obo (this takes ~5s)...")
-    data["ontology"] = pronto.Ontology("data/raw/hp.obo")
+    data["ontology"] = pronto.Ontology(str(_PROJECT_ROOT / "data" / "raw" / "hp.obo"))
     print("  -> Ontology loaded")
 
     elapsed = time.time() - t0

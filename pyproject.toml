@@ -27,4 +27,4 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["core*", "tools*", "agent*", "eval*", "scripts*"]
+include = ["core*", "tools*", "agent*", "eval*", "scripts*", "chainlit_utils*"]
