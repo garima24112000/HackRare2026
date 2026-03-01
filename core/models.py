@@ -171,20 +171,20 @@ class NextStep(BaseModel):
     ]
     action: str
     rationale: str
-    discriminates_between: list[str] = Field(default_factory=list)
     urgency: Literal["urgent", "routine", "low"]
-    evidence_source: str
 
 
 class DifferentialEntry(BaseModel):
-    """Part of final output — one disease in the differential."""
+    """Part of final output — LLM confidence assessment for a disease candidate.
+
+    Raw phenotype evidence (matched_terms, missing_terms, coverage, genes,
+    inheritance, phenotype_freqs) is in DiseaseCandidate and DiseaseProfile.
+    This model adds the LLM's clinical reasoning layer on top.
+    """
     disease: str
     disease_id: str
     confidence: Literal["high", "moderate", "low"]
     confidence_reasoning: str
-    supporting_phenotypes: list[str] = Field(default_factory=list)
-    contradicting_phenotypes: list[str] = Field(default_factory=list)
-    missing_key_phenotypes: list[str] = Field(default_factory=list)
 
 
 class UncertaintySummary(BaseModel):
@@ -200,12 +200,15 @@ class UncertaintySummary(BaseModel):
 
 class AgentOutput(BaseModel):
     """The complete pipeline output — assembled by the orchestrator."""
+    session_id: str = ""
     patient_hpo_observed: list[HPOMatch] = Field(default_factory=list)
     patient_hpo_excluded: list[ExcludedFinding] = Field(default_factory=list)
     timing_profiles: list[TimingProfile] = Field(default_factory=list)
     data_completeness: float = 0.0
     red_flags: list[RedFlag] = Field(default_factory=list)
     differential: list[DifferentialEntry] = Field(default_factory=list)
+    disease_candidates: list[DiseaseCandidate] = Field(default_factory=list)
+    disease_profiles: list[DiseaseProfile] = Field(default_factory=list)
     next_best_steps: list[NextStep] = Field(default_factory=list)
     reanalysis: Optional[ReanalysisResult] = None
     what_would_change: list[str] = Field(default_factory=list)

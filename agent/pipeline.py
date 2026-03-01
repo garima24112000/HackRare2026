@@ -155,15 +155,72 @@ def _compute_completeness(state: PipelineState, patient_input: PatientInput) -> 
 
 # ── Context packet assembly ────────────────────────────────────────────
 
+
 def _build_context_packet(state: PipelineState, patient_input: PatientInput) -> dict:
+    """Build a slim context packet for the final LLM reasoning call.
+
+    Full evidence (disease_candidates, disease_profiles with all fields) is
+    persisted in AgentOutput for the dashboard.  The LLM only receives the
+    minimum needed to assign confidence and recommend next steps.
+    """
+    # Patient phenotypes — only what the LLM needs for reasoning
+    hpo_slim = [
+        {"hpo_id": m.hpo_id, "label": m.label, "ic_score": m.ic_score}
+        for m in state.hpo_matches
+    ]
+
+    # Excluded & timing — compact summaries
+    excluded_slim = [
+        {"raw_text": e.raw_text, "mapped_hpo_label": e.mapped_hpo_label, "confidence": e.confidence}
+        for e in state.excluded
+    ]
+    timing_slim = [
+        {"phenotype": t.phenotype_ref, "onset": t.onset, "onset_stage": t.onset_stage, "progression": t.progression}
+        for t in state.timing
+    ]
+
+    # Disease candidates — top 5 with matched term labels for reasoning
+    # Build HPO ID → label lookup from patient matches
+    id_to_label = {m.hpo_id: m.label for m in state.hpo_matches if m.hpo_id and m.label}
+
+    candidates_slim = []
+    for d in state.diseases[:5]:
+        matched_labels = [id_to_label.get(t, t) for t in d.matched_terms]
+        candidates_slim.append({
+            "disease_name": d.disease_name,
+            "disease_id": d.disease_id,
+            "sim_score": round(d.sim_score, 2),
+            "matched_phenotypes": matched_labels,
+            "missing_count": len(d.missing_terms),
+            "coverage_pct": round(d.coverage_pct, 4),
+            "excluded_penalty": d.excluded_penalty,
+        })
+
+    # Disease profiles — genes, inheritance, key phenotypes, recommended tests
+    # (full profiles persist in AgentOutput for the dashboard)
+    profiles_slim = []
+    for p in state.profiles:
+        top_phenos = [
+            {"label": pf.label, "frequency": pf.frequency}
+            for pf in p.phenotype_freqs[:10]
+            if pf.label
+        ]
+        profiles_slim.append({
+            "disease_id": p.disease_id,
+            "inheritance": p.inheritance,
+            "causal_genes": p.causal_genes,
+            "key_phenotypes": top_phenos,
+            "recommended_tests": p.recommended_tests,
+        })
+
     return {
-        "patient_hpo_matches": [m.model_dump() for m in state.hpo_matches],
-        "excluded_findings": [e.model_dump() for e in state.excluded],
-        "timing_profiles": [t.model_dump() for t in state.timing],
-        "disease_candidates": [d.model_dump() for d in state.diseases[:10]],
-        "disease_profiles": [p.model_dump() for p in state.profiles],
+        "patient_hpo_matches": hpo_slim,
+        "excluded_findings": excluded_slim,
+        "timing_profiles": timing_slim,
+        "disease_candidates": candidates_slim,
+        "disease_profiles": profiles_slim,
         "data_completeness": state.data_completeness,
-        "red_flags": [r.model_dump() for r in state.red_flags],
+        "red_flags": [{"flag": r.flag_label, "severity": r.severity} for r in state.red_flags],
         "prior_tests": patient_input.prior_tests,
         "family_history": patient_input.family_history,
         "patient_age": patient_input.age,
@@ -183,9 +240,6 @@ def _build_degraded_output(state: PipelineState) -> dict:
                 disease_id=d.disease_id,
                 confidence="low",
                 confidence_reasoning="Auto-generated from disease match score; LLM reasoning unavailable.",
-                supporting_phenotypes=d.matched_terms,
-                contradicting_phenotypes=[],
-                missing_key_phenotypes=d.missing_terms,
             ).model_dump()
         )
 
@@ -195,9 +249,7 @@ def _build_degraded_output(state: PipelineState) -> dict:
             action_type="refine_phenotype",
             action="Provide additional clinical details and phenotype observations",
             rationale="Data completeness is low; more phenotype data is needed before recommending specific tests.",
-            discriminates_between=[],
             urgency="routine",
-            evidence_source="pipeline",
         ).model_dump()
     ]
 
@@ -219,7 +271,11 @@ def _build_degraded_output(state: PipelineState) -> dict:
 def _call_final_reasoning(context_packet: dict) -> dict:
     """Single LLM call: send the context packet and parse the structured output."""
     prompt = _load_final_prompt()
-    raw = call_llm(system=prompt, user=json.dumps(context_packet, default=str))
+    raw = call_llm(
+        system=prompt,
+        user=json.dumps(context_packet, default=str),
+        max_tokens=16384,  # Slimmed prompt; reasoning model still needs headroom
+    )
     return extract_json(raw)
 
 
@@ -287,8 +343,11 @@ async def run_pipeline(
     if urgent_flags:
         logger.warning("URGENT red flags detected — returning early")
         return AgentOutput(
+            session_id=state.session_id,
             red_flags=state.red_flags,
             patient_hpo_observed=[],
+            disease_candidates=[],
+            disease_profiles=[],
             data_completeness=0.0,
             uncertainty=UncertaintySummary(
                 known=[f"URGENT: {f.flag_label}" for f in urgent_flags],
@@ -442,12 +501,15 @@ async def run_pipeline(
         uncertainty = UncertaintySummary(**degraded["uncertainty"])
 
     output = AgentOutput(
+        session_id=state.session_id,
         patient_hpo_observed=state.hpo_matches,
         patient_hpo_excluded=state.excluded,
         timing_profiles=state.timing,
         data_completeness=state.data_completeness,
         red_flags=state.red_flags,
         differential=differential,
+        disease_candidates=state.diseases[:5],
+        disease_profiles=state.profiles,
         next_best_steps=next_best_steps,
         reanalysis=state.reanalysis,
         what_would_change=what_would_change,
