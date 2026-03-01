@@ -1,6 +1,10 @@
 # Environment
 .env
 
+# Virtual environment
+.venv/
+venv/
+
 # Python
 __pycache__/
 *.pyc
@@ -9,6 +13,9 @@ __pycache__/
 dist/
 build/
 *.egg
+
+# uv
+uv.lock
 
 # Data files (large, download separately)
 data/raw/*.obo
@@ -28,3 +35,6 @@ chainlit.md
 # OS
 .DS_Store
 Thumbs.db
+
+# pytest
+.pytest_cache/
