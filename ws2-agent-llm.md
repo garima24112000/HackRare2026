@@ -357,6 +357,133 @@ Test the full pipeline end-to-end before WS3 integration:
 
 ---
 
+## Dashboard Evidence Consumption — How the Differential Dashboard Uses `AgentOutput`
+
+The `AgentOutput` model persisted to Redis (`session_mgr.set_output`) contains **all evidence** the dashboard needs. The design intentionally separates **LLM reasoning** (slim, clinical judgments) from **programmatic evidence** (full term lists, scores, disease profiles) so the dashboard can render rich detail without depending on LLM output quality.
+
+### Data Flow
+
+```
+Pipeline tools  →  AgentOutput (persisted to Redis)  →  Dashboard reads via session_mgr.get_output()
+```
+
+Redis key: `session:{session_id}:output` — contains the full `AgentOutput.model_dump()` JSON.
+
+### Evidence Fields Available to the Dashboard
+
+The dashboard should consume these fields from `AgentOutput`:
+
+#### 1. Observed Phenotypes — `patient_hpo_observed: list[HPOMatch]`
+Each entry contains:
+| Field | Type | Dashboard Use |
+|---|---|---|
+| `hpo_id` | `str` | Link to HPO ontology, cross-reference with disease phenotypes |
+| `label` | `str` | Display name (e.g. "Seizure") |
+| `definition` | `str \| null` | Tooltip or expandable detail |
+| `ic_score` | `float` | Phenotype specificity — higher = rarer = more diagnostic value. Use for sorting or visual weight |
+| `parents` | `list[str]` | HPO hierarchy — enables tree view or breadcrumb navigation |
+| `match_confidence` | `"high" \| "medium" \| "low"` | Visual indicator (badge/color) of mapping reliability |
+| `raw_input` | `str` | Original user input that produced this match |
+
+#### 2. Excluded Phenotypes — `patient_hpo_excluded: list[ExcludedFinding]`
+| Field | Type | Dashboard Use |
+|---|---|---|
+| `raw_text` | `str` | The exact clinical phrase containing the negation |
+| `mapped_hpo_term` | `str \| null` | HPO ID of the excluded phenotype |
+| `mapped_hpo_label` | `str \| null` | Display label |
+| `exclusion_type` | `"explicit" \| "soft"` | Hard negation vs uncertain — affects how strongly to penalize candidates |
+| `confidence` | `"high" \| "medium" \| "low"` | Confidence of the exclusion extraction |
+
+**Dashboard usage:** Show as a "ruled out" list. Cross-reference against each disease candidate's phenotype list — if a disease expects a phenotype that's excluded, flag it visually.
+
+#### 3. Timing Profiles — `timing_profiles: list[TimingProfile]`
+| Field | Type | Dashboard Use |
+|---|---|---|
+| `phenotype_ref` | `str` | Which phenotype this timing applies to |
+| `onset` | `str` | Human-readable onset (e.g. "at birth", "4 months of age") |
+| `onset_normalized` | `float` | Age in decimal years — use for timeline visualization |
+| `onset_stage` | `str` | Life stage category (Congenital/Neonatal, Infantile, Childhood, Juvenile, Adult) |
+| `resolution` | `str \| null` | When symptom resolved (null = ongoing) |
+| `is_ongoing` | `bool` | Current status |
+| `progression` | `str` | stable / progressive / improving / episodic |
+
+**Dashboard usage:** Render a patient phenotype timeline. X-axis = age, each phenotype plotted at its onset with progression arrows.
+
+#### 4. Disease Candidates — `disease_candidates: list[DiseaseCandidate]`
+This is the **programmatic** ranking from `disease_match.run()` with full phenotype overlap detail.
+
+| Field | Type | Dashboard Use |
+|---|---|---|
+| `rank` | `int` | Programmatic rank by similarity score |
+| `disease_id` | `str` | OMIM/Orphanet ID — link to external databases |
+| `disease_name` | `str` | Display name |
+| `sim_score` | `float` | IC-weighted similarity score — use for bar chart or ranking visual |
+| `matched_terms` | `list[str]` | HPO IDs that the patient shares with this disease — highlight in green |
+| `missing_terms` | `list[str]` | HPO IDs the disease expects but the patient doesn't have — show as "not assessed" or "missing" |
+| `extra_terms` | `list[str]` | HPO IDs the patient has but the disease doesn't — show as "extra findings" |
+| `coverage_pct` | `float` | Fraction of disease phenotypes matched (0.0–1.0) — show as progress bar |
+| `excluded_penalty` | `bool` | True if any excluded phenotype contradicts this disease — show warning badge |
+
+**Dashboard usage:** Primary ranking table. For each disease row, show matched/missing/extra term counts with expandable lists. Coverage bar. Contradiction warning if `excluded_penalty` is true.
+
+#### 5. Disease Profiles — `disease_profiles: list[DiseaseProfile]`
+Rich disease reference data from the knowledge base.
+
+| Field | Type | Dashboard Use |
+|---|---|---|
+| `disease_id` | `str` | Links to the corresponding `DiseaseCandidate` entry |
+| `disease_name` | `str` | Display name |
+| `inheritance` | `str \| null` | e.g. "Autosomal recessive", "X-linked" — show as badge |
+| `causal_genes` | `list[str]` | Gene symbols — display as gene chips, link to OMIM/GeneCards |
+| `phenotype_freqs` | `list[PhenotypeFrequency]` | Each has `hpo_id`, `label`, `frequency` — render as phenotype frequency table |
+| `recommended_tests` | `list[str]` | Suggested diagnostic tests for this disease |
+
+**Dashboard usage:** Expandable detail panel per disease candidate. Show gene list, inheritance mode, phenotype frequency table (cross-highlight matched vs missing vs excluded). Show recommended tests as actionable items.
+
+#### 6. LLM Reasoning — `differential`, `next_best_steps`, `what_would_change`, `uncertainty`
+These 4 fields are the LLM's **clinical reasoning layer** on top of the programmatic evidence.
+
+| Field | Content | Dashboard Use |
+|---|---|---|
+| `differential[].confidence` | high / moderate / low | Color-coded confidence badge per disease |
+| `differential[].confidence_reasoning` | 1-2 sentences | Expandable reasoning tooltip per disease |
+| `next_best_steps[]` | Ranked actions with type, rationale, urgency | Action items panel — sortable by urgency |
+| `what_would_change[]` | Concrete "if X then Y" statements | Show as a "key decision points" card |
+| `uncertainty.known` | Established facts | Green checklist |
+| `uncertainty.missing` | Not yet assessed | Yellow/orange "gaps" list |
+| `uncertainty.ambiguous` | Unclear findings | Red/gray "needs clarification" list |
+
+#### 7. Metadata
+| Field | Type | Dashboard Use |
+|---|---|---|
+| `session_id` | `str` | Session tracking, URL routing, audit trail |
+| `data_completeness` | `float` | 0.0–1.0 gauge/progress indicator |
+| `red_flags` | `list[RedFlag]` | Urgent alerts banner at top of dashboard |
+| `reanalysis` | `ReanalysisResult \| null` | Reanalysis recommendation panel (if applicable) |
+
+### Joining Evidence Across Fields
+
+The dashboard should **cross-reference** fields to build rich views:
+
+1. **Disease detail panel:** Join `disease_candidates[i]` (scores, matched/missing terms) with `disease_profiles[i]` (genes, inheritance, phenotype frequencies) and `differential[i]` (LLM confidence + reasoning) — all linked by `disease_id`.
+
+2. **Phenotype evidence matrix:** Rows = patient HPO terms (from `patient_hpo_observed`), Columns = disease candidates. Cell = "matched" (green) if the HPO ID appears in `matched_terms`, "missing from patient" (gray) if in `missing_terms`, "excluded" (red) if in `patient_hpo_excluded`.
+
+3. **Contradiction highlighting:** For each disease candidate, check if any item in `patient_hpo_excluded` has a `mapped_hpo_term` that appears in the disease's phenotype list (from `disease_profiles[].phenotype_freqs[].hpo_id`). If so, display a contradiction warning with the frequency (e.g., "Hearing impairment excluded — expected in 99-80% of Cockayne syndrome cases").
+
+4. **Timeline + disease overlay:** Plot `timing_profiles` on a timeline, then overlay expected onset windows from `disease_profiles` phenotype data to show temporal consistency.
+
+### Additional Redis Keys Available
+
+Beyond the output, the dashboard can also fetch:
+- `session:{id}:input` — original patient input (for display/edit)
+- `session:{id}:tools` — full tool call log with timestamps (for audit/debugging)
+- `session:{id}:context` — the slim context packet sent to the LLM (for transparency)
+
+All keys have a 1-hour TTL.
+
+---
+
 ## Critical Gotchas
 
 1. **JSON parsing from LLM:** Claude sometimes wraps JSON in markdown code fences. Always strip ```json and ``` from the response before parsing.
