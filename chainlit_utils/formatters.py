@@ -112,8 +112,8 @@ def format_agent_output(
 
     topbar = _build_topbar(output, patient_meta, step_durations)
     statsbar = _build_statsbar(output, hpo_index)
-    col1 = _build_col_differential(output, hpo_index)
-    col2 = _build_col_middle(output)
+    col1 = _build_col_left(output, hpo_index, step_durations)
+    col2 = _build_col_middle(output, hpo_index)
     col3 = _build_col_right(output, step_durations)
 
     return (
@@ -170,11 +170,6 @@ def _build_statsbar(output: AgentOutput, hpo_index: dict) -> str:
     candidates = len(output.disease_candidates)
     flags = len(output.red_flags)
 
-    # HPO chip badges for tile 5
-    hpo_chips = ""
-    for m in output.patient_hpo_observed[:6]:
-        hpo_chips += f'<span class="hpo-stat-chip">{_esc(m.hpo_id)}</span>'
-
     return (
         f'<div class="statsbar">'
         # Tile 1: Completeness gauge
@@ -208,86 +203,84 @@ def _build_statsbar(output: AgentOutput, hpo_index: dict) -> str:
         f'<div class="stat-sub">Red<br>Flags</div>'
         f'<div class="stat-accent"></div>'
         f'</div>'
-        # Tile 5: HPO chips
+        # Tile 5: HPO term chips
         f'<div class="stat-tile" style="--cc:var(--teal); border-right:none">'
-        f'<div class="hpo-stat-chips">{hpo_chips}</div>'
+        f'<div style="display:flex;gap:5px;flex-wrap:wrap;flex:1">'
+        + "".join(
+            f'<span style="padding:2px 7px;border-radius:4px;font-size:10px;'
+            f'font-family:var(--mono);background:var(--blue-a);color:var(--blue);'
+            f'border:1px solid rgba(96,165,250,.2)">{_esc(m.hpo_id)}</span>'
+            for m in output.patient_hpo_observed[:8]
+        ) +
+        f'</div>'
         f'<div class="stat-accent"></div>'
         f'</div>'
         f'</div>'
     )
 
 
-# ── Column 1: Differential Diagnosis ───────────────────────────────
+# ── Column 1: Differential Diagnosis Accordion ────────────────────
 
-def _build_col_differential(output: AgentOutput, hpo_index: dict) -> str:
-    diff_count = len(output.differential) if output.differential else 0
-    total_candidates = len(output.disease_candidates)
-
-    # Build lookup: disease_id → DiseaseCandidate
-    dc_lookup: dict[str, object] = {}
+def _build_col_left(
+    output: AgentOutput,
+    hpo_index: dict,
+    step_durations: list[dict] | None,
+) -> str:
+    # Build a lookup from disease_id → DiseaseCandidate for matched/missing tags
+    dc_by_id: dict[str, "DiseaseCandidate"] = {}
     for dc in output.disease_candidates:
-        dc_lookup[dc.disease_id] = dc
+        dc_by_id[dc.disease_id] = dc
 
-    # Excluded HPO IDs
-    excluded_hpo_ids = set()
-    for ex in output.patient_hpo_excluded:
-        if ex.mapped_hpo_term:
-            excluded_hpo_ids.add(ex.mapped_hpo_term)
-
-    # Differential cards
-    cards_html = ""
-    for i, entry in enumerate(output.differential or []):
+    # Build accordion cards from the differential entries
+    diff_cards = ""
+    for i, entry in enumerate(output.differential[:5]):
         conf_cls = CONF_CSS.get(entry.confidence, "low")
+        dc = dc_by_id.get(entry.disease_id)
+
+        # Score: use coverage_pct from DiseaseCandidate, or sim_score
+        pct = 0
+        if dc:
+            pct = int(dc.coverage_pct) if dc.coverage_pct > 1 else int(dc.coverage_pct * 100)
+            if pct == 0:
+                pct = int(dc.sim_score * 100) if dc.sim_score <= 1 else int(dc.sim_score)
+
+        # Tags: matched (green) and missing (amber), resolved to labels
+        matched_tags = ""
+        missing_tags = ""
+        if dc:
+            for tid in dc.matched_terms[:6]:
+                lbl = _esc(_resolve_label(hpo_index, tid))
+                matched_tags += f'<span class="tag s">\u2713 {lbl}</span>'
+            for tid in dc.missing_terms[:4]:
+                lbl = _esc(_resolve_label(hpo_index, tid))
+                missing_tags += f'<span class="tag m">\u26a0 {lbl}</span>'
+
         open_cls = " open" if i == 0 else ""
 
-        dc = dc_lookup.get(entry.disease_id)
-
-        # Coverage percentage
-        if dc and dc.coverage_pct > 0:
-            score_pct = int(dc.coverage_pct * 100)
-        else:
-            score_pct = max(10, 100 - (i * 15))
-
-        # Phenotype tags
-        tags_html = ""
-        if dc:
-            for term_id in dc.matched_terms[:8]:
-                lbl = _esc(_resolve_label(hpo_index, term_id))
-                tags_html += f'<span class="tag s">\u2713 {lbl}</span>'
-            for term_id in dc.missing_terms[:6]:
-                lbl = _esc(_resolve_label(hpo_index, term_id))
-                tags_html += f'<span class="tag m">\u26a0 {lbl}</span>'
-            for term_id in dc.matched_terms:
-                if term_id in excluded_hpo_ids:
-                    lbl = _esc(_resolve_label(hpo_index, term_id))
-                    tags_html += f'<span class="tag x">\u2717 {lbl}</span>'
-
-        reasoning = _esc(entry.confidence_reasoning)
-        conf_label = _esc(entry.confidence)
-
-        cards_html += (
+        diff_cards += (
             f'<div class="da {conf_cls}{open_cls}">'
             f'<div class="da-row">'
-            f'<div class="da-num">{i + 1}</div>'
+            f'<div class="da-num">{i+1}</div>'
             f'<div>'
             f'<div class="da-name">{_esc(entry.disease)}</div>'
             f'<div class="da-id">{_esc(entry.disease_id)}</div>'
             f'</div>'
-            f'<div class="da-badge">{conf_label}</div>'
+            f'<div class="da-badge">{_esc(entry.confidence)}</div>'
             f'<div class="da-score-col">'
-            f'<div class="da-pct">{score_pct}%</div>'
-            f'<div class="da-bar"><div class="da-fill" style="width:{score_pct}%"></div></div>'
+            f'<div class="da-pct">{pct}%</div>'
+            f'<div class="da-bar"><div class="da-fill" style="width:{pct}%"></div></div>'
             f'</div>'
             f'<div class="da-chev">\u25be</div>'
             f'</div>'
             f'<div class="da-body"><div class="da-inner">'
-            f'<div class="da-reason">{reasoning}</div>'
-            f'<div class="tags">{tags_html}</div>'
+            f'<div class="da-reason">{_esc(entry.confidence_reasoning)}</div>'
+            f'<div class="tags">{matched_tags}{missing_tags}</div>'
             f'</div></div>'
             f'</div>'
         )
 
-    # Assess chips
+    total_candidates = len(output.disease_candidates)
+    shown = min(5, len(output.differential))
     assess_html = _build_assess_chips(output, hpo_index)
 
     return (
@@ -295,10 +288,10 @@ def _build_col_differential(output: AgentOutput, hpo_index: dict) -> str:
         f'<div class="col-header">'
         f'<span style="font-size:12px">\U0001f52c</span>'
         f'<span class="col-title">Differential Diagnosis</span>'
-        f'<div class="col-cnt">top {diff_count} of {total_candidates}</div>'
+        f'<div class="col-cnt">top {shown} of {total_candidates}</div>'
         f'</div>'
         f'<div class="col-body">'
-        f'<div class="diff-list">{cards_html}</div>'
+        f'<div class="diff-list">{diff_cards}</div>'
         f'{assess_html}'
         f'</div>'
         f'</div>'
@@ -338,7 +331,7 @@ def _build_assess_chips(output: AgentOutput, hpo_index: dict) -> str:
 
 # ── Column 2: Next Steps + Uncertainty ─────────────────────────────
 
-def _build_col_middle(output: AgentOutput) -> str:
+def _build_col_middle(output: AgentOutput, hpo_index: dict) -> str:
     # Next steps cards
     steps_html = ""
     for i, step in enumerate(output.next_best_steps):
@@ -358,22 +351,7 @@ def _build_col_middle(output: AgentOutput) -> str:
 
     step_count = len(output.next_best_steps)
 
-    # Red flags (rendered inside mid column if any)
-    red_flags_html = ""
-    if output.red_flags:
-        rf_items = ""
-        for rf in output.red_flags:
-            sev = _esc(rf.severity)
-            label = _esc(rf.flag_label)
-            action = _esc(rf.recommended_action)
-            rf_items += f'<div class="rf-item"><strong>{sev}</strong> — {label}: {action}</div>'
-        red_flags_html = (
-            f'<div class="red-flag-banner">'
-            f'<div class="rf-title">\U0001f6a8 Red Flags</div>'
-            f'{rf_items}</div>'
-        )
-
-    # Uncertainty
+    # Uncertainty summary (3-column: known / missing / ambiguous)
     uc = output.uncertainty
     known_items = "".join(f'<div class="uc-item">{_esc(k)}</div>' for k in uc.known)
     missing_items = "".join(f'<div class="uc-item">{_esc(m)}</div>' for m in uc.missing)
@@ -387,7 +365,6 @@ def _build_col_middle(output: AgentOutput) -> str:
         f'<div class="col-cnt">{step_count} actions</div>'
         f'</div>'
         f'<div class="mid-col-body">'
-        f'{red_flags_html}'
         f'<div class="steps-list">{steps_html}</div>'
         f'<hr class="mid-sep">'
         f'<div class="col-header" style="border-top:none">'
@@ -410,7 +387,7 @@ def _build_col_right(
     output: AgentOutput,
     step_durations: list[dict] | None,
 ) -> str:
-    # Pipeline rows (all done since we render after pipeline completes)
+    # Pipeline rows
     pipeline_html = ""
     pipeline_steps = step_durations or []
     for sd in pipeline_steps:
@@ -423,8 +400,6 @@ def _build_col_right(
             f'<div class="pl-ms">{dur:.1f}s</div>'
             f'</div>'
         )
-
-    # If no step durations, show default pipeline stages
     if not pipeline_html:
         default_steps = [
             "Red Flag Check", "HPO Mapping", "Disease Matching",
@@ -435,9 +410,11 @@ def _build_col_right(
                 f'<div class="pl-row">'
                 f'<div class="pl-node done">\u2713</div>'
                 f'<div class="pl-label done">{_esc(name)}</div>'
-                f'<div class="pl-ms">—</div>'
+                f'<div class="pl-ms">\u2014</div>'
                 f'</div>'
             )
+
+    pip_status = "complete"
 
     # What would change
     wwc_html = ""
@@ -449,14 +426,12 @@ def _build_col_right(
             f'</div>'
         )
 
-    pip_status = "complete"
-
     return (
         f'<div class="col">'
         f'<div class="col-header">'
         f'<span style="font-size:12px">\u2699\ufe0f</span>'
         f'<span class="col-title">Pipeline</span>'
-        f'<div class="col-cnt complete">{pip_status}</div>'
+        f'<div class="col-cnt" style="color:var(--green);border-color:var(--green-a);background:var(--green-a)">{pip_status}</div>'
         f'</div>'
         f'<div class="col-body">'
         f'<div class="pipeline-list">{pipeline_html}</div>'

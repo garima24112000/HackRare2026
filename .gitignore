@@ -23,7 +23,6 @@ data/raw/*.hpoa
 data/raw/*.xml
 
 # Chainlit
-.chainlit/
 chainlit.md
 
 # IDE

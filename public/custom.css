@@ -632,3 +632,83 @@ button[id^="action"] {
 .statsbar .stat-tile:nth-child(3) { animation-delay: .12s; }
 .statsbar .stat-tile:nth-child(4) { animation-delay: .16s; }
 .statsbar .stat-tile:nth-child(5) { animation-delay: .20s; }
+
+/* ═══════════════════════════════════════════════════════
+   HPO ID LIST (Column 1)
+   ═══════════════════════════════════════════════════════ */
+.hpo-id-list {
+  padding: 6px 8px; display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto; max-height: 35%;
+}
+.hpo-id-list::-webkit-scrollbar { display: none; width: 0; }
+.hpo-id-list { scrollbar-width: none; }
+.hpo-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px; border-radius: 6px;
+  transition: background .12s;
+}
+.hpo-row:hover { background: var(--s3); }
+.hpo-id-chip {
+  padding: 2px 7px; border-radius: 4px; font-size: 10px;
+  font-family: var(--mono); background: var(--blue-a); color: var(--blue);
+  border: 1px solid rgba(96,165,250,.2); flex-shrink: 0;
+}
+.hpo-id-label {
+  font-size: 11px; color: var(--dim); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ═══════════════════════════════════════════════════════
+   NO RED FLAGS INDICATOR
+   ═══════════════════════════════════════════════════════ */
+.no-flags {
+  padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+}
+.nf-icon {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--green-a); color: var(--green);
+  border: 1px solid rgba(74,222,128,.3);
+  font-size: 10px; display: flex; align-items: center; justify-content: center;
+}
+.nf-text { font-size: 11px; color: var(--dim); font-family: var(--mono); }
+
+/* ═══════════════════════════════════════════════════════
+   SUMMARY LIST (Column 3 — condensed differential)
+   ═══════════════════════════════════════════════════════ */
+.summary-list {
+  padding: 6px 10px; display: flex; flex-direction: column; gap: 3px;
+}
+.sum-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px;
+  background: var(--s2); border: 1px solid var(--b1);
+}
+.sum-row:hover { background: var(--s3); border-color: var(--b2); }
+.sum-rank {
+  font-size: 14px; font-weight: 800; color: var(--dim);
+  font-family: var(--ui); width: 20px; text-align: center; flex-shrink: 0;
+}
+.sum-name {
+  font-size: 11px; font-weight: 500; color: var(--text); flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sum-badge {
+  padding: 2px 6px; border-radius: 4px; font-size: 9px;
+  font-family: var(--mono); font-weight: 500; text-align: center; flex-shrink: 0;
+}
+.sum-badge.high {
+  background: var(--green-a); color: var(--green);
+  border: 1px solid rgba(74,222,128,.2);
+}
+.sum-badge.mod {
+  background: var(--amber-a); color: var(--amber);
+  border: 1px solid rgba(251,191,36,.2);
+}
+.sum-badge.low {
+  background: var(--rose-a); color: var(--rose);
+  border: 1px solid rgba(248,113,113,.2);
+}
+.sum-empty {
+  padding: 10px 12px; font-size: 11px; color: var(--muted);
+  font-family: var(--mono); font-style: italic;
+}
